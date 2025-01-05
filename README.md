@@ -65,7 +65,7 @@ This project's native storage implementation has been benchmarked against the wi
 
 ### Benchmark Results
 
-![Performance Comparison](assets/images/compare.png)
+![Performance Comparison](assets/images/compare.jpg)
 
 *Graph: Native Storage vs Async Storage performance comparison*
 
