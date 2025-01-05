@@ -12,7 +12,9 @@ import {
 import NativeLocalStorage from '@/specs/NativeLocalStorage';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import performance, { PerformanceObserver } from 'react-native-performance';
+import { MMKV } from 'react-native-mmkv';
 
+const storage = new MMKV();
 const STORAGE_KEY = 'storedWords';
 const TEST_ITERATIONS = 100;
 
@@ -89,6 +91,22 @@ const Home = () => {
     performance.mark('asyncWriteOneByOneEnd');
     performance.measure('AsyncStorage Write (One by One)', 'asyncWriteOneByOneStart', 'asyncWriteOneByOneEnd');
 
+    // Test MMKV Write (Bulk)
+    performance.mark('mmkvWriteBulkStart');
+    storage.set('mmkvTestBulk', JSON.stringify(testData));
+    performance.mark('mmkvWriteBulkEnd');
+    performance.measure('MMKV Write (Bulk)', 'mmkvWriteBulkStart', 'mmkvWriteBulkEnd');
+
+    // Test MMKV Write (One by One)
+    performance.mark('mmkvWriteOneByOneStart');
+    let mmkvArray: string[] = [];
+    for (let word of testData) {
+      mmkvArray.push(word);
+      storage.set('mmkvTestOneByOne', JSON.stringify(mmkvArray));
+    }
+    performance.mark('mmkvWriteOneByOneEnd');
+    performance.measure('MMKV Write (One by One)', 'mmkvWriteOneByOneStart', 'mmkvWriteOneByOneEnd');
+
     // Test NativeLocalStorage Read (Array from One by One)
     performance.mark('nativeReadOneByOneStart');
     const nativeResultOneByOne = NativeLocalStorage?.getStringArray('performanceTestOneByOne');
@@ -115,6 +133,20 @@ const Home = () => {
     performance.mark('asyncReadOneByOneEnd');
     performance.measure('AsyncStorage Read (One by One Array)', 'asyncReadOneByOneStart', 'asyncReadOneByOneEnd');
 
+    // Test MMKV Read (Bulk Array)
+    performance.mark('mmkvReadBulkStart');
+    const mmkvResultBulk = storage.getString('mmkvTestBulk');
+    const parsedMmkvResultBulk = mmkvResultBulk ? JSON.parse(mmkvResultBulk) : [];
+    performance.mark('mmkvReadBulkEnd');
+    performance.measure('MMKV Read (Bulk Array)', 'mmkvReadBulkStart', 'mmkvReadBulkEnd');
+
+    // Test MMKV Read (One by One Array)
+    performance.mark('mmkvReadOneByOneStart');
+    const mmkvResultOneByOne = storage.getString('mmkvTestOneByOne');
+    const parsedMmkvResultOneByOne = mmkvResultOneByOne ? JSON.parse(mmkvResultOneByOne) : [];
+    performance.mark('mmkvReadOneByOneEnd');
+    performance.measure('MMKV Read (One by One Array)', 'mmkvReadOneByOneStart', 'mmkvReadOneByOneEnd');
+
     // Test Single Item Operations
     performance.mark('nativeSingleWriteStart');
     NativeLocalStorage?.setItem('test-single', 'test-value');
@@ -135,6 +167,16 @@ const Home = () => {
     const asyncSingleResult = await AsyncStorage.getItem('async-test-single');
     performance.mark('asyncSingleReadEnd');
     performance.measure('AsyncStorage Read (Single)', 'asyncSingleReadStart', 'asyncSingleReadEnd');
+
+    performance.mark('mmkvSingleWriteStart');
+    storage.set('mmkv-test-single', 'test-value');
+    performance.mark('mmkvSingleWriteEnd');
+    performance.measure('MMKV Write (Single)', 'mmkvSingleWriteStart', 'mmkvSingleWriteEnd');
+
+    performance.mark('mmkvSingleReadStart');
+    const mmkvSingleResult = storage.getString('mmkv-test-single');
+    performance.mark('mmkvSingleReadEnd');
+    performance.measure('MMKV Read (Single)', 'mmkvSingleReadStart', 'mmkvSingleReadEnd');
 
     // Get all measurements
     const measurements = performance.getEntriesByType('measure');
@@ -163,34 +205,52 @@ const Home = () => {
         results.push(`${measure.name}: ${measure.duration.toFixed(2)}ms`);
       });
 
-    // Calculate comparisons
+    // Calculate comparisons with MMKV
     const nativeBulkWrite = measurements.find(m => m.name === 'NativeLocalStorage Write (Bulk)')?.duration || 0;
     const asyncBulkWrite = measurements.find(m => m.name === 'AsyncStorage Write (Bulk)')?.duration || 0;
+    const mmkvBulkWrite = measurements.find(m => m.name === 'MMKV Write (Bulk)')?.duration || 0;
+    
     const nativeOneByOneWrite = measurements.find(m => m.name === 'NativeLocalStorage Write (One by One)')?.duration || 0;
     const asyncOneByOneWrite = measurements.find(m => m.name === 'AsyncStorage Write (One by One)')?.duration || 0;
+    const mmkvOneByOneWrite = measurements.find(m => m.name === 'MMKV Write (One by One)')?.duration || 0;
     
-    // Read speed measurements
     const nativeBulkRead = measurements.find(m => m.name === 'NativeLocalStorage Read (Bulk Array)')?.duration || 0;
     const asyncBulkRead = measurements.find(m => m.name === 'AsyncStorage Read (Bulk Array)')?.duration || 0;
-    const nativeOneByOneRead = measurements.find(m => m.name === 'NativeLocalStorage Read (One by One Array)')?.duration || 0;
-    const asyncOneByOneRead = measurements.find(m => m.name === 'AsyncStorage Read (One by One Array)')?.duration || 0;
+    const mmkvBulkRead = measurements.find(m => m.name === 'MMKV Read (Bulk Array)')?.duration || 0;
+    
     const nativeSingleRead = measurements.find(m => m.name === 'NativeLocalStorage Read (Single)')?.duration || 0;
     const asyncSingleRead = measurements.find(m => m.name === 'AsyncStorage Read (Single)')?.duration || 0;
+    const mmkvSingleRead = measurements.find(m => m.name === 'MMKV Read (Single)')?.duration || 0;
 
-    const bulkWriteDiff = ((asyncBulkWrite - nativeBulkWrite) / asyncBulkWrite * 100).toFixed(1);
-    const oneByOneWriteDiff = ((asyncOneByOneWrite - nativeOneByOneWrite) / asyncOneByOneWrite * 100).toFixed(1);
-    const bulkReadDiff = ((asyncBulkRead - nativeBulkRead) / asyncBulkRead * 100).toFixed(1);
-    const oneByOneReadDiff = ((asyncOneByOneRead - nativeOneByOneRead) / asyncOneByOneRead * 100).toFixed(1);
-    const singleReadDiff = ((asyncSingleRead - nativeSingleRead) / asyncSingleRead * 100).toFixed(1);
+    results.push('\nComparisons with MMKV:');
+    
+    // Bulk Write Comparisons
+    const mmkvVsNativeBulkWrite = ((nativeBulkWrite - mmkvBulkWrite) / nativeBulkWrite * 100).toFixed(1);
+    const mmkvVsAsyncBulkWrite = ((asyncBulkWrite - mmkvBulkWrite) / asyncBulkWrite * 100).toFixed(1);
+    results.push(`\nBulk Write:`);
+    results.push(`MMKV vs NativeLocalStorage: ${mmkvVsNativeBulkWrite}% ${Number(mmkvVsNativeBulkWrite) > 0 ? 'faster' : 'slower'}`);
+    results.push(`MMKV vs AsyncStorage: ${mmkvVsAsyncBulkWrite}% ${Number(mmkvVsAsyncBulkWrite) > 0 ? 'faster' : 'slower'}`);
 
-    results.push('\nWrite Speed Comparisons:');
-    results.push(`Bulk Write: NativeLocalStorage is ${bulkWriteDiff}% ${Number(bulkWriteDiff) > 0 ? 'faster' : 'slower'}`);
-    results.push(`One by One Write: NativeLocalStorage is ${oneByOneWriteDiff}% ${Number(oneByOneWriteDiff) > 0 ? 'faster' : 'slower'}`);
+    // One by One Write Comparisons
+    const mmkvVsNativeOneByOne = ((nativeOneByOneWrite - mmkvOneByOneWrite) / nativeOneByOneWrite * 100).toFixed(1);
+    const mmkvVsAsyncOneByOne = ((asyncOneByOneWrite - mmkvOneByOneWrite) / asyncOneByOneWrite * 100).toFixed(1);
+    results.push(`\nOne by One Write:`);
+    results.push(`MMKV vs NativeLocalStorage: ${mmkvVsNativeOneByOne}% ${Number(mmkvVsNativeOneByOne) > 0 ? 'faster' : 'slower'}`);
+    results.push(`MMKV vs AsyncStorage: ${mmkvVsAsyncOneByOne}% ${Number(mmkvVsAsyncOneByOne) > 0 ? 'faster' : 'slower'}`);
 
-    results.push('\nRead Speed Comparisons:');
-    results.push(`Bulk Read: NativeLocalStorage is ${bulkReadDiff}% ${Number(bulkReadDiff) > 0 ? 'faster' : 'slower'}`);
-    results.push(`One by One Read: NativeLocalStorage is ${oneByOneReadDiff}% ${Number(oneByOneReadDiff) > 0 ? 'faster' : 'slower'}`);
-    results.push(`Single Item Read: NativeLocalStorage is ${singleReadDiff}% ${Number(singleReadDiff) > 0 ? 'faster' : 'slower'}`);
+    // Bulk Read Comparisons
+    const mmkvVsNativeBulkRead = ((nativeBulkRead - mmkvBulkRead) / nativeBulkRead * 100).toFixed(1);
+    const mmkvVsAsyncBulkRead = ((asyncBulkRead - mmkvBulkRead) / asyncBulkRead * 100).toFixed(1);
+    results.push(`\nBulk Read:`);
+    results.push(`MMKV vs NativeLocalStorage: ${mmkvVsNativeBulkRead}% ${Number(mmkvVsNativeBulkRead) > 0 ? 'faster' : 'slower'}`);
+    results.push(`MMKV vs AsyncStorage: ${mmkvVsAsyncBulkRead}% ${Number(mmkvVsAsyncBulkRead) > 0 ? 'faster' : 'slower'}`);
+
+    // Single Read Comparisons
+    const mmkvVsNativeSingleRead = ((nativeSingleRead - mmkvSingleRead) / nativeSingleRead * 100).toFixed(1);
+    const mmkvVsAsyncSingleRead = ((asyncSingleRead - mmkvSingleRead) / asyncSingleRead * 100).toFixed(1);
+    results.push(`\nSingle Read:`);
+    results.push(`MMKV vs NativeLocalStorage: ${mmkvVsNativeSingleRead}% ${Number(mmkvVsNativeSingleRead) > 0 ? 'faster' : 'slower'}`);
+    results.push(`MMKV vs AsyncStorage: ${mmkvVsAsyncSingleRead}% ${Number(mmkvVsAsyncSingleRead) > 0 ? 'faster' : 'slower'}`);
 
     // Array lengths verification
     results.push(`\nArray Lengths (should all be ${TEST_ITERATIONS}):`);
@@ -198,6 +258,8 @@ const Home = () => {
     results.push(`NativeLocalStorage (Bulk): ${nativeResultBulk?.length || 0}`);
     results.push(`AsyncStorage (One by One): ${parsedAsyncResultOneByOne.length}`);
     results.push(`AsyncStorage (Bulk): ${parsedAsyncResultBulk.length}`);
+    results.push(`MMKV (One by One): ${parsedMmkvResultOneByOne.length}`);
+    results.push(`MMKV (Bulk): ${parsedMmkvResultBulk.length}`);
 
     // Clear test data
     NativeLocalStorage?.removeItem('performanceTestOneByOne');
@@ -206,6 +268,9 @@ const Home = () => {
     await AsyncStorage.removeItem('asyncStorageTest');
     await AsyncStorage.removeItem('asyncStorageTestOneByOne');
     await AsyncStorage.removeItem('async-test-single');
+    storage.delete('mmkvTestBulk');
+    storage.delete('mmkvTestOneByOne');
+    storage.delete('mmkv-test-single');
     
     // Clear performance entries
     performance.clearMarks();
